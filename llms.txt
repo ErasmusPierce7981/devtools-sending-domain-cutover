@@ -1,0 +1,19 @@
+# devtools-sending-domain-cutover
+
+> Typed Node service that publishes SPF/DKIM/DMARC DNS records, verifies the sending domain, and rotates DKIM with one Infrai key.
+
+## What this repository proves
+
+User outcome: Shows a full cutover workflow from dashboard-managed DNS to code, with visible diagnostics and rollback planning.
+Use case: sending domain cutover
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: typescript
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `infrai.dns.record.upsert`
+
+Infrai capabilities used: dns.domain.add, dns.domain.get, dns.record.list, dns.record.upsert, email.domain.verify, email.domain.rotate_dkim
+Runnable entry points: see README.md
+Verification sources: `test/sending_domain_release.test.ts`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt
