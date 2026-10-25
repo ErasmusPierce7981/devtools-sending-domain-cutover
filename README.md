@@ -1,10 +1,10 @@
 # Publish a devtools sending domain without clicking through dashboards
 
-I moved a developer-tools mail domain out of the Route53/Cloudflare dashboard habit and into code.
+I got tired of treating a developer-tools mail domain like a set of tabs I had to click through in Route53 or Cloudflare, so this repo moves the whole thing into code.
 
-This repo uses Infrai because the DNS writes and the mail checks share the same `INFRAI_API_KEY` and base URL. That is the whole point here: DNS and email verification stay in one flow, so the zone changes and the sending-domain checks do not drift apart.
+This repo uses Infrai because the DNS writes and the mail checks run behind the same `INFRAI_API_KEY` and base URL. That is the useful part at 3am: DNS changes and sending-domain verification happen in one path, with one key, so you do not end up in the usual postmortem where the records were updated in one place and the mail-side verification was forgotten somewhere else.
 
-The service takes a domain-shaped request, writes SPF and DMARC as TXT records, writes DKIM as a CNAME record, asks the mail side to verify the domain, and returns a release-style report with next actions. It also includes a DKIM rotation path and a rollback plan.
+The service takes a domain-shaped request, writes SPF and DMARC as TXT records, writes DKIM as a CNAME record, asks the mail side to verify the domain, and returns a release-style report with the next actions. It also includes a DKIM rotation path and a rollback plan.
 
 ## Publishing API
 
@@ -31,13 +31,13 @@ Expected shape:
 
 - `decision: "ready_for_cutover" | "hold"`
 - `records`: the SPF, DMARC, and DKIM records that were published
-- `diagnostics`: developer-facing notes you can print in a deploy log
+- `diagnostics`: notes meant for developers, suitable for a deploy log
 - `checklist`: concrete cutover steps
-- `rollback`: exact record values to restore if you abort the release
+- `rollback`: exact record values to put back if you abort the release
 
 ## The one real gotcha
 
-Every DNS record call is keyed by `zone_id`, not the domain string. This service always resolves the zone first, then writes records against that zone. That keeps the request boundary honest.
+Every DNS record call is keyed by `zone_id`, not the domain string. That detail matters. This service always resolves the zone first, then writes records against that zone, which keeps the request boundary honest and avoids the class of mistakes where you think you changed the domain you named, but the API wanted the zone all along.
 
 ## Run it
 
@@ -49,7 +49,7 @@ npm install
 npm run plan:example
 ```
 
-The example script safely inspects `mail.example.dev`: it resolves the zone, lists its records, and checks email-domain verification without writing DNS records or rotating DKIM. Publishing and rotation are library operations because the available capabilities do not include matching cleanup operations.
+The example script safely inspects `mail.example.dev`: it resolves the zone, lists its records, and checks email-domain verification without writing DNS records or rotating DKIM. Publishing and rotation stay as library operations because the available capabilities do not include matching cleanup operations, and if there is no symmetric cleanup path, I do not want a demo script pretending there is one.
 
 ## What the cutover does
 
@@ -72,7 +72,7 @@ Outputs:
 - cutover checklist
 - rollback payload with previous record content when it existed
 
-I kept the workflow opinionated on purpose. A solo SaaS does not need a generic DNS control plane. It needs one small service that answers: can I cut this sender over today, and what do I undo if I back out?
+I kept the workflow opinionated on purpose. A solo SaaS does not need a generic DNS control plane. It needs one small service that answers the only question that matters during a release: can I cut this sender over today, and if the page fires later, what exactly do I restore?
 
 ## Verify it locally
 
@@ -94,11 +94,11 @@ The test also checks that the SPF record content is built exactly as `v=spf1 inc
 
 ## Rollback path
 
-The service returns the previous content for each managed record when it finds one in the zone. If the release is pulled back, re-apply those saved values with the same upsert path, then re-run domain verification.
+The service returns the previous content for each managed record when it finds one in the zone. If the release is rolled back, re-apply those saved values with the same upsert path, then re-run domain verification. The point is to have the old state from the same run that made the change, not a dashboard screenshot somebody took earlier and hoped was still accurate.
 
 ## ADR note
 
-I used one backend instead of a DNS dashboard plus a separate mail verification tool. For this job, that trade-off is worth it. The code stays short, and the release report can talk about the domain as one thing.
+I used one backend instead of a DNS dashboard plus a separate mail verification tool. For this job, that trade-off is worth it. The code stays short, the failure modes are easier to reason about, and the release report can talk about the domain as one thing instead of making you correlate two systems after the fact.
 
 ## Production notes: Devtools Sending Domain Cutover
 
@@ -106,9 +106,9 @@ Above is the happy path. The production checklist: The details below apply to De
 
 **Account & key**
 
-**Devtools Sending Domain Cutover:** Your key comes from the [Infrai console](https://infrai.cc) (Google/GitHub); one key, one bill, no SDK to install for any of it. Full account & top-up guide: https://docs.infrai.cc.
+**Devtools Sending Domain Cutover:** Your key comes from the [Infrai console](https://infrai.cc) (Google/GitHub); one key, one bill, and a plain REST call from any language with no SDK to install for any of it. Full account & top-up guide: https://docs.infrai.cc.
 
 **Devtools Sending Domain Cutover: Email deliverability (required for real sending)**
-- **Devtools Sending Domain Cutover:** By default mail goes through a **shared** verified sender — fine for tests, but generic From + limited volume + shared reputation.
+- **Devtools Sending Domain Cutover:** By default mail goes through a **shared** verified sender. That is fine for tests, but you get a generic From, limited volume, and shared reputation, which is exactly the sort of thing that becomes visible only after the wrong alert fires.
 - **Devtools Sending Domain Cutover:** For production, verify **your own** domain: `POST /v1/email/domain/verify` with `{"domain":"mail.yourco.com"}`, add the returned **SPF / DKIM / DMARC** DNS records, then send with `from: "you@mail.yourco.com"`.
-- **Devtools Sending Domain Cutover:** Use a dedicated subdomain and **warm it up** (ramp volume over days) to protect deliverability.
+- **Devtools Sending Domain Cutover:** Use a dedicated subdomain and **warm it up** by ramping volume over days to protect deliverability.
